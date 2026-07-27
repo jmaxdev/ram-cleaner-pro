@@ -32,9 +32,9 @@ fn main() {
         println!("RAM MEMORY PURGE IN PROGRESS (WINDOWS NT API)");
         println!("==================================================");
         let res = purger::execute_purge(&config);
-        println!("Initial RAM used : {} MB", res.initial_used_mb);
-        println!("Final RAM used   : {} MB", res.final_used_mb);
-        println!("RAM FREED        : {} MB", res.mb_freed);
+        println!("Initial RAM used : {}", purger::format_bytes(res.initial_used_bytes));
+        println!("Final RAM used   : {}", purger::format_bytes(res.final_used_bytes));
+        println!("RAM FREED        : {}", purger::format_bytes(res.bytes_freed));
         println!("Processes trimmed: {}", res.processes_trimmed);
         println!("Levels executed  : {}", res.levels_executed.join(", "));
         if !res.errors.is_empty() {
@@ -46,6 +46,12 @@ fn main() {
     if args.status {
         let stats = purger::get_memory_stats();
         println!("{{");
+        println!("  \"total_bytes\": {},", stats.total_bytes);
+        println!("  \"used_bytes\": {},", stats.used_bytes);
+        println!("  \"free_bytes\": {},", stats.free_bytes);
+        println!("  \"total_formatted\": \"{}\",", purger::format_bytes(stats.total_bytes));
+        println!("  \"used_formatted\": \"{}\",", purger::format_bytes(stats.used_bytes));
+        println!("  \"free_formatted\": \"{}\",", purger::format_bytes(stats.free_bytes));
         println!("  \"total_mb\": {},", stats.total_mb);
         println!("  \"used_mb\": {},", stats.used_mb);
         println!("  \"free_mb\": {},", stats.free_mb);
@@ -66,9 +72,9 @@ fn main() {
             let mut mon = monitor.write();
             if let Some(res) = mon.update() {
                 println!(
-                    "[{}] Auto-purge completed: Freed {} MB of RAM (Processes: {})",
+                    "[{}] Auto-purge completed: Freed {} of RAM (Processes: {})",
                     chrono_timestamp(),
-                    res.mb_freed,
+                    purger::format_bytes(res.bytes_freed),
                     res.processes_trimmed
                 );
             }

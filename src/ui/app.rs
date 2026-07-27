@@ -19,6 +19,7 @@ pub enum CurrentScreen {
 #[allow(dead_code)]
 pub struct PurgeRecord {
     pub time_str: String,
+    pub bytes_freed: u64,
     pub mb_freed: u64,
     pub processes: usize,
     pub levels: String,
@@ -107,8 +108,10 @@ impl eframe::App for RamPurgerApp {
         if let Some(ref tray) = self.tray_mgr {
             let stats = monitor.last_stats;
             tray.update_tooltip(&format!(
-                "RAM Purger - Usage: {:.1}% ({} / {} MB)",
-                stats.usage_percent, stats.used_mb, stats.total_mb
+                "RAM Purger - Usage: {:.1}% ({} / {})",
+                stats.usage_percent,
+                crate::purger::format_bytes(stats.used_bytes),
+                crate::purger::format_bytes(stats.total_bytes)
             ));
 
             while let Ok(event) = MenuEvent::receiver().try_recv() {
@@ -116,13 +119,15 @@ impl eframe::App for RamPurgerApp {
                     let res = monitor.force_purge();
                     self.purge_history.push(PurgeRecord {
                         time_str: current_time_string(),
+                        bytes_freed: res.bytes_freed,
                         mb_freed: res.mb_freed,
                         processes: res.processes_trimmed,
                         levels: res.levels_executed.join(", "),
                     });
                     self.status_message = Some(format!(
-                        "Freed {} MB (Processes: {})",
-                        res.mb_freed, res.processes_trimmed
+                        "Freed {} (Processes: {})",
+                        crate::purger::format_bytes(res.bytes_freed),
+                        res.processes_trimmed
                     ));
                     self.last_purge_anim = Some(Instant::now());
                 } else if event.id == tray.item_toggle_gui.id() {
@@ -147,13 +152,14 @@ impl eframe::App for RamPurgerApp {
         if let Some(res) = monitor.update() {
             self.purge_history.push(PurgeRecord {
                 time_str: current_time_string(),
+                bytes_freed: res.bytes_freed,
                 mb_freed: res.mb_freed,
                 processes: res.processes_trimmed,
                 levels: res.levels_executed.join(", "),
             });
             self.status_message = Some(format!(
-                "Auto-purge: {} MB freed",
-                res.mb_freed
+                "Auto-purge: {} freed",
+                crate::purger::format_bytes(res.bytes_freed)
             ));
             self.last_purge_anim = Some(Instant::now());
         }
@@ -332,13 +338,15 @@ impl eframe::App for RamPurgerApp {
                             let res = monitor.force_purge();
                             self.purge_history.push(PurgeRecord {
                                 time_str: current_time_string(),
+                                bytes_freed: res.bytes_freed,
                                 mb_freed: res.mb_freed,
                                 processes: res.processes_trimmed,
                                 levels: res.levels_executed.join(", "),
                             });
                             self.status_message = Some(format!(
-                                "Freed {} MB (Processes: {})",
-                                res.mb_freed, res.processes_trimmed
+                                "Freed {} (Processes: {})",
+                                crate::purger::format_bytes(res.bytes_freed),
+                                res.processes_trimmed
                             ));
                             self.last_purge_anim = Some(Instant::now());
                         }
@@ -395,9 +403,9 @@ impl eframe::App for RamPurgerApp {
                     ui.add_space(8.0);
 
                     let total_count = self.purge_history.len();
-                    let max_freed = self.purge_history.iter().map(|r| r.mb_freed).max().unwrap_or(0);
+                    let max_freed = self.purge_history.iter().map(|r| r.bytes_freed).max().unwrap_or(0);
                     let avg_freed = if total_count > 0 {
-                        self.purge_history.iter().map(|r| r.mb_freed).sum::<u64>() / total_count as u64
+                        self.purge_history.iter().map(|r| r.bytes_freed).sum::<u64>() / total_count as u64
                     } else {
                         0
                     };
@@ -409,11 +417,11 @@ impl eframe::App for RamPurgerApp {
                         });
                         cols[1].vertical_centered(|ui| {
                             ui.label(egui::RichText::new("MAX FREED").small().color(egui::Color32::from_rgb(130, 140, 160)));
-                            ui.label(egui::RichText::new(format!("{} MB", max_freed)).size(24.0).strong().color(egui::Color32::from_rgb(0, 229, 255)));
+                            ui.label(egui::RichText::new(crate::purger::format_bytes(max_freed)).size(24.0).strong().color(egui::Color32::from_rgb(0, 229, 255)));
                         });
                         cols[2].vertical_centered(|ui| {
                             ui.label(egui::RichText::new("AVERAGE").small().color(egui::Color32::from_rgb(130, 140, 160)));
-                            ui.label(egui::RichText::new(format!("{} MB", avg_freed)).size(24.0).strong().color(egui::Color32::from_rgb(255, 208, 0)));
+                            ui.label(egui::RichText::new(crate::purger::format_bytes(avg_freed)).size(24.0).strong().color(egui::Color32::from_rgb(255, 208, 0)));
                         });
                     });
 
@@ -434,14 +442,14 @@ impl eframe::App for RamPurgerApp {
                     painter.text(
                         rect_ram.left_center() + egui::vec2(16.0, -10.0),
                         egui::Align2::LEFT_CENTER,
-                        format!("RAM Used: {:.2} GB / {:.2} GB", stats.used_mb as f64 / 1024.0, stats.total_mb as f64 / 1024.0),
+                        format!("RAM Used: {} / {}", crate::purger::format_bytes(stats.used_bytes), crate::purger::format_bytes(stats.total_bytes)),
                         egui::FontId::proportional(14.0),
                         egui::Color32::from_rgb(0, 229, 255),
                     );
                     painter.text(
                         rect_ram.left_center() + egui::vec2(16.0, 10.0),
                         egui::Align2::LEFT_CENTER,
-                        format!("RAM Free: {:.2} GB", stats.free_mb as f64 / 1024.0),
+                        format!("RAM Free: {}", crate::purger::format_bytes(stats.free_bytes)),
                         egui::FontId::proportional(12.0),
                         egui::Color32::from_rgb(130, 140, 160),
                     );
@@ -618,9 +626,9 @@ impl eframe::App for RamPurgerApp {
                     ui.add_space(8.0);
 
                     let total_count = self.purge_history.len();
-                    let max_freed = self.purge_history.iter().map(|r| r.mb_freed).max().unwrap_or(0);
+                    let max_freed = self.purge_history.iter().map(|r| r.bytes_freed).max().unwrap_or(0);
                     let avg_freed = if total_count > 0 {
-                        self.purge_history.iter().map(|r| r.mb_freed).sum::<u64>() / total_count as u64
+                        self.purge_history.iter().map(|r| r.bytes_freed).sum::<u64>() / total_count as u64
                     } else {
                         0
                     };
@@ -632,11 +640,11 @@ impl eframe::App for RamPurgerApp {
                         });
                         cols[1].vertical_centered(|ui| {
                             ui.label(egui::RichText::new("MAX FREED").small().color(egui::Color32::from_rgb(130, 140, 160)));
-                            ui.label(egui::RichText::new(format!("{} MB", max_freed)).size(24.0).strong().color(egui::Color32::from_rgb(0, 229, 255)));
+                            ui.label(egui::RichText::new(crate::purger::format_bytes(max_freed)).size(24.0).strong().color(egui::Color32::from_rgb(0, 229, 255)));
                         });
                         cols[2].vertical_centered(|ui| {
                             ui.label(egui::RichText::new("AVERAGE").small().color(egui::Color32::from_rgb(130, 140, 160)));
-                            ui.label(egui::RichText::new(format!("{} MB", avg_freed)).size(24.0).strong().color(egui::Color32::from_rgb(255, 208, 0)));
+                            ui.label(egui::RichText::new(crate::purger::format_bytes(avg_freed)).size(24.0).strong().color(egui::Color32::from_rgb(255, 208, 0)));
                         });
                     });
 
@@ -668,7 +676,7 @@ impl eframe::App for RamPurgerApp {
                                     ui.horizontal(|ui| {
                                         ui.columns(3, |cols| {
                                             cols[0].label(egui::RichText::new(&rec.time_str).size(13.0).color(egui::Color32::from_rgb(180, 190, 210)));
-                                            cols[1].label(egui::RichText::new(format!("+{} MB", rec.mb_freed)).size(16.0).strong().color(egui::Color32::from_rgb(0, 229, 255)));
+                                            cols[1].label(egui::RichText::new(format!("+{}", crate::purger::format_bytes(rec.bytes_freed))).size(16.0).strong().color(egui::Color32::from_rgb(0, 229, 255)));
                                             cols[2].label(egui::RichText::new(format!("{} proc", rec.processes)).size(13.0).color(egui::Color32::from_rgb(255, 208, 0)));
                                         });
                                     });
@@ -721,7 +729,7 @@ impl eframe::App for RamPurgerApp {
                             ui.horizontal(|ui| {
                                 ui.label("Total RAM Installed:");
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.label(egui::RichText::new(format!("{} MB ({:.2} GB)", stats.total_mb, stats.total_mb as f64 / 1024.0)).strong().color(egui::Color32::WHITE));
+                                    ui.label(egui::RichText::new(crate::purger::format_bytes(stats.total_bytes)).strong().color(egui::Color32::WHITE));
                                 });
                             });
                             ui.separator();
@@ -729,7 +737,7 @@ impl eframe::App for RamPurgerApp {
                             ui.horizontal(|ui| {
                                 ui.label("Active RAM Used:");
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.label(egui::RichText::new(format!("{} MB ({:.2} GB)", stats.used_mb, stats.used_mb as f64 / 1024.0)).strong().color(egui::Color32::from_rgb(239, 68, 68)));
+                                    ui.label(egui::RichText::new(crate::purger::format_bytes(stats.used_bytes)).strong().color(egui::Color32::from_rgb(239, 68, 68)));
                                 });
                             });
                             ui.separator();
@@ -737,7 +745,7 @@ impl eframe::App for RamPurgerApp {
                             ui.horizontal(|ui| {
                                 ui.label("Free RAM Available:");
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.label(egui::RichText::new(format!("{} MB ({:.2} GB)", stats.free_mb, stats.free_mb as f64 / 1024.0)).strong().color(egui::Color32::from_rgb(16, 185, 129)));
+                                    ui.label(egui::RichText::new(crate::purger::format_bytes(stats.free_bytes)).strong().color(egui::Color32::from_rgb(16, 185, 129)));
                                 });
                             });
                             ui.separator();
@@ -764,7 +772,7 @@ impl eframe::App for RamPurgerApp {
                             ui.horizontal(|ui| {
                                 ui.label("Total Freed in Session:");
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.label(egui::RichText::new(format!("{} MB", monitor.total_freed_mb_session)).strong().color(egui::Color32::from_rgb(0, 229, 255)));
+                                    ui.label(egui::RichText::new(crate::purger::format_bytes(monitor.total_freed_bytes_session)).strong().color(egui::Color32::from_rgb(0, 229, 255)));
                                 });
                             });
                         });

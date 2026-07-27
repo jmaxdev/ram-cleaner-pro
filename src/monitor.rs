@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 pub struct RamDataPoint {
     pub timestamp_secs: u64,
     pub usage_percent: f32,
+    pub used_bytes: u64,
     pub used_mb: u64,
 }
 
@@ -20,6 +21,7 @@ pub struct MonitorState {
     pub last_stats: MemoryStats,
     pub last_purge_time: Option<Instant>,
     pub last_purge_result: Option<PurgeResult>,
+    pub total_freed_bytes_session: u64,
     pub total_freed_mb_session: u64,
 }
 
@@ -30,6 +32,7 @@ impl MonitorState {
         history.push_back(RamDataPoint {
             timestamp_secs: 0,
             usage_percent: stats.usage_percent,
+            used_bytes: stats.used_bytes,
             used_mb: stats.used_mb,
         });
 
@@ -39,6 +42,7 @@ impl MonitorState {
             last_stats: stats,
             last_purge_time: None,
             last_purge_result: None,
+            total_freed_bytes_session: 0,
             total_freed_mb_session: 0,
         }
     }
@@ -56,6 +60,7 @@ impl MonitorState {
                 .unwrap_or_default()
                 .as_secs(),
             usage_percent: stats.usage_percent,
+            used_bytes: stats.used_bytes,
             used_mb: stats.used_mb,
         });
 
@@ -95,6 +100,7 @@ impl MonitorState {
     pub fn force_purge(&mut self) -> PurgeResult {
         let res = execute_purge(&self.config);
         self.last_purge_time = Some(Instant::now());
+        self.total_freed_bytes_session += res.bytes_freed;
         self.total_freed_mb_session += res.mb_freed;
         self.last_purge_result = Some(res.clone());
         self.last_stats = get_memory_stats();

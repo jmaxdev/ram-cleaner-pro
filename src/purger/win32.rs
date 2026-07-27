@@ -41,6 +41,9 @@ struct SystemFileCacheInformation {
 
 #[derive(Debug, Clone, Copy)]
 pub struct MemoryStats {
+    pub total_bytes: u64,
+    pub used_bytes: u64,
+    pub free_bytes: u64,
     pub total_mb: u64,
     pub used_mb: u64,
     pub free_mb: u64,
@@ -56,11 +59,17 @@ pub fn get_memory_stats() -> MemoryStats {
         let mut status: MEMORYSTATUSEX = std::mem::zeroed();
         status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
         if GlobalMemoryStatusEx(&mut status) != 0 {
-            let total_mb = status.ullTotalPhys / (1024 * 1024);
-            let free_mb = status.ullAvailPhys / (1024 * 1024);
+            let total_bytes = status.ullTotalPhys;
+            let free_bytes = status.ullAvailPhys;
+            let used_bytes = total_bytes.saturating_sub(free_bytes);
+            let total_mb = total_bytes / (1024 * 1024);
+            let free_mb = free_bytes / (1024 * 1024);
             let used_mb = total_mb.saturating_sub(free_mb);
             let usage_percent = status.dwMemoryLoad as f32;
             MemoryStats {
+                total_bytes,
+                used_bytes,
+                free_bytes,
                 total_mb,
                 used_mb,
                 free_mb,
@@ -68,6 +77,9 @@ pub fn get_memory_stats() -> MemoryStats {
             }
         } else {
             MemoryStats {
+                total_bytes: 0,
+                used_bytes: 0,
+                free_bytes: 0,
                 total_mb: 0,
                 used_mb: 0,
                 free_mb: 0,
