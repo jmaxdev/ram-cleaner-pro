@@ -5,6 +5,7 @@ mod config;
 mod monitor;
 mod purger;
 mod ui;
+mod updater;
 
 use clap::Parser;
 use cli::CliArgs;
@@ -25,6 +26,23 @@ fn main() {
     }
     if let Some(inv) = args.interval {
         config.interval_minutes = inv;
+    }
+
+    if args.check_update {
+        println!("Checking for updates on GitHub...");
+        match updater::check_for_update(None) {
+            Ok(Some(info)) => {
+                println!("New version available: v{}", info.version);
+                println!("Release Notes:\n{}", info.release_notes);
+            }
+            Ok(None) => {
+                println!("RAM Purger Pro is up to date (v{}).", env!("CARGO_PKG_VERSION"));
+            }
+            Err(e) => {
+                println!("Error checking updates: {}", e);
+            }
+        }
+        return;
     }
 
     if args.purge_now {

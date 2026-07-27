@@ -25,4 +25,7 @@ pub struct CliArgs {
 
     #[arg(long = "interval")]
     pub interval: Option<u64>,
+
+    #[arg(long = "check-update")]
+    pub check_update: bool,
 }

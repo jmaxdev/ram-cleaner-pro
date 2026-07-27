@@ -23,6 +23,11 @@ pub struct MonitorState {
     pub last_purge_result: Option<PurgeResult>,
     pub total_freed_bytes_session: u64,
     pub total_freed_mb_session: u64,
+    pub last_update_check: Option<Instant>,
+    pub pending_update: Option<crate::updater::UpdateInfo>,
+    pub is_checking_update: bool,
+    pub update_error: Option<String>,
+    pub update_rx: Option<std::sync::mpsc::Receiver<Result<Option<crate::updater::UpdateInfo>, String>>>,
 }
 
 impl MonitorState {
@@ -44,7 +49,27 @@ impl MonitorState {
             last_purge_result: None,
             total_freed_bytes_session: 0,
             total_freed_mb_session: 0,
+            last_update_check: None,
+            pending_update: None,
+            is_checking_update: false,
+            update_error: None,
+            update_rx: None,
         }
+    }
+
+    pub fn check_update_async(&mut self) {
+        let skipped = self.config.skipped_version.clone();
+        self.last_update_check = Some(Instant::now());
+        self.is_checking_update = true;
+        self.update_error = None;
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.update_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let res = crate::updater::check_for_update(skipped.as_deref());
+            let _ = tx.send(res);
+        });
     }
 
     pub fn update(&mut self) -> Option<PurgeResult> {
@@ -63,6 +88,35 @@ impl MonitorState {
             used_bytes: stats.used_bytes,
             used_mb: stats.used_mb,
         });
+
+        if let Some(ref rx) = self.update_rx {
+            if let Ok(res) = rx.try_recv() {
+                self.is_checking_update = false;
+                match res {
+                    Ok(Some(info)) => {
+                        self.pending_update = Some(info);
+                    }
+                    Ok(None) => {
+                        self.pending_update = None;
+                    }
+                    Err(e) => {
+                        self.update_error = Some(e);
+                    }
+                }
+                self.update_rx = None;
+            }
+        }
+
+        if self.config.check_updates_enabled {
+            let should_check = self
+                .last_update_check
+                .map(|t| t.elapsed() >= Duration::from_secs(3 * 3600))
+                .unwrap_or(true);
+
+            if should_check && !self.is_checking_update && self.update_rx.is_none() {
+                self.check_update_async();
+            }
+        }
 
         let mut purge_triggered = false;
         let now = Instant::now();

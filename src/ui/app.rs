@@ -585,6 +585,33 @@ impl eframe::App for RamPurgerApp {
                                 config_changed = true;
                             }
 
+                            ui.add_space(18.0);
+                            ui.separator();
+                            ui.add_space(10.0);
+
+                            ui.label(egui::RichText::new("SOFTWARE UPDATES").small().strong().color(egui::Color32::WHITE));
+                            ui.add_space(8.0);
+
+                            if ui.checkbox(&mut monitor.config.check_updates_enabled, "Buscar actualizaciones automáticamente (cada 3 hs)").changed() {
+                                config_changed = true;
+                            }
+                            ui.add_space(8.0);
+
+                            let check_btn_text = if monitor.is_checking_update {
+                                "Buscando actualizaciones..."
+                            } else {
+                                "Comprobar actualizaciones ahora"
+                            };
+
+                            if ui.add_enabled(!monitor.is_checking_update, egui::Button::new(egui::RichText::new(check_btn_text).small().color(egui::Color32::from_rgb(0, 229, 255)))).clicked() {
+                                monitor.check_update_async();
+                            }
+
+                            if let Some(ref err) = monitor.update_error {
+                                ui.add_space(4.0);
+                                ui.label(egui::RichText::new(format!("⚠ {}", err)).small().color(egui::Color32::from_rgb(239, 68, 68)));
+                            }
+
                             if config_changed {
                                 let _ = monitor.config.save();
                             }
@@ -825,11 +852,85 @@ impl eframe::App for RamPurgerApp {
                             ui.label("Uses native NT Kernel API calls (NtSetSystemInformation) to flush Working Sets, Standby Lists, Modified Page Lists, and System Cache.");
                             ui.add_space(16.0);
                             ui.label(
-                                egui::RichText::new("Version 1.0.0 | jmaxdev")
+                                egui::RichText::new(format!("Version {} | jmaxdev", env!("CARGO_PKG_VERSION")))
                                     .small()
                                     .color(egui::Color32::from_rgb(0, 229, 255)),
                             );
                         });
+                }
+            }
+
+            if let Some(info) = monitor.pending_update.clone() {
+                let mut close_modal = false;
+                let mut skip_version = false;
+                let mut download_update = false;
+
+                egui::Window::new("⚠ NUEVA VERSIÓN DISPONIBLE")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                    .fixed_size([340.0, 260.0])
+                    .show(ctx, |ui| {
+                        ui.add_space(6.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("RAM Purger Pro v{} está disponible", info.version))
+                                    .size(15.0)
+                                    .strong()
+                                    .color(egui::Color32::from_rgb(0, 229, 255)),
+                            );
+                            ui.label(
+                                egui::RichText::new(format!("Versión instalada: v{}", env!("CARGO_PKG_VERSION")))
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(180, 190, 210)),
+                            );
+                        });
+
+                        ui.add_space(10.0);
+
+                        if !info.release_notes.is_empty() {
+                            ui.label(egui::RichText::new("Notas de la versión:").small().strong().color(egui::Color32::WHITE));
+                            egui::ScrollArea::vertical().max_height(80.0).show(ui, |ui| {
+                                ui.label(egui::RichText::new(&info.release_notes).size(11.0).color(egui::Color32::from_rgb(200, 210, 225)));
+                            });
+                            ui.add_space(10.0);
+                        }
+
+                        ui.vertical_centered(|ui| {
+                            if ui.add(egui::Button::new(egui::RichText::new("⬇ DESCARGAR E INSTALAR").strong().color(egui::Color32::BLACK)).fill(egui::Color32::from_rgb(0, 229, 255))).clicked() {
+                                download_update = true;
+                            }
+
+                            ui.add_space(6.0);
+
+                            ui.columns(2, |cols| {
+                                cols[0].vertical_centered(|ui| {
+                                    if ui.button(egui::RichText::new("Saltar versión").small().color(egui::Color32::from_rgb(239, 68, 68))).clicked() {
+                                        skip_version = true;
+                                    }
+                                });
+                                cols[1].vertical_centered(|ui| {
+                                    if ui.button(egui::RichText::new("Recordar luego").small().color(egui::Color32::from_rgb(180, 190, 210))).clicked() {
+                                        close_modal = true;
+                                    }
+                                });
+                            });
+                        });
+                    });
+
+                if download_update {
+                    self.status_message = Some("Descargando e instalando actualización...".to_string());
+                    let url = info.download_url.clone();
+                    std::thread::spawn(move || {
+                        let _ = crate::updater::download_and_apply_update(&url);
+                    });
+                    monitor.pending_update = None;
+                } else if skip_version {
+                    monitor.config.skipped_version = Some(info.version);
+                    let _ = monitor.config.save();
+                    monitor.pending_update = None;
+                } else if close_modal {
+                    monitor.pending_update = None;
                 }
             }
         });

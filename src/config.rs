@@ -14,6 +14,14 @@ pub struct AppConfig {
     pub purge_system_cache: bool,
     pub start_minimized: bool,
     pub notify_on_purge: bool,
+    #[serde(default = "default_check_updates")]
+    pub check_updates_enabled: bool,
+    #[serde(default)]
+    pub skipped_version: Option<String>,
+}
+
+fn default_check_updates() -> bool {
+    true
 }
 
 impl Default for AppConfig {
@@ -29,6 +37,8 @@ impl Default for AppConfig {
             purge_system_cache: true,
             start_minimized: false,
             notify_on_purge: true,
+            check_updates_enabled: true,
+            skipped_version: None,
         }
     }
 }
