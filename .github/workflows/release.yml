@@ -42,14 +42,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ram_purger-windows-x64
-          path: target/release/ram_purger.exe
+          path: target/release/ram-purger.exe
           if-no-files-found: error
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/ram_purger.exe
+          files: target/release/ram-purger.exe
           name: RAM Purger Pro ${{ github.ref_name }}
           draft: false
           prerelease: false
