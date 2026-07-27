@@ -1,6 +1,6 @@
 [package]
 name = "ram-pro"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 authors = ["jmaxdev"]
 description = "Complete RAM memory purge and optimization utility for Windows"
